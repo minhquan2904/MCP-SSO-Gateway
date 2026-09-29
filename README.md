@@ -42,6 +42,10 @@ and on success returns the headers nginx forwards upstream.
 - The token is shown once. Only its SHA-256 hash is stored. A token is issued
   only if the user may use at least one server, and the printed client config
   lists only the servers that user is allowed to use.
+- The printed `.mcp.json` reads the token from an environment variable, so the
+  file is safe to commit. The token itself goes into the shell profile.
+- The session cookie has its own name and is scoped to `/auth`. Other apps and
+  upstreams on the same host never receive it.
 
 ### 2. Calling an upstream through the gateway
 
@@ -83,8 +87,15 @@ Diagram sources live in [`docs/architecture/`](docs/architecture/).
 
 - nginx is the only ingress. The gateway and the upstream MCP servers must not
   publish ports.
+- Only nginx may call the introspection endpoint, because its 200 response
+  carries the upstream secret. The gateway compares the TCP peer with the
+  address its container name resolves to, and rejects any other caller before
+  it looks at the token. Other containers on the same network therefore cannot
+  use a valid personal token to read an upstream secret.
+- The peer check needs the real peer address, so the gateway must not trust
+  `X-Forwarded-For` or similar proxy headers.
 - Locations that skip `auth_request`, such as health checks, must clear the
-  user header themselves.
+  user header and the `Authorization` header themselves.
 - This is **not** an OAuth 2.1 authorization server for MCP. Clients send a
   bearer token they were given. Clients that only support the MCP OAuth flow,
   such as connectors that cannot set a custom header, are out of scope for
