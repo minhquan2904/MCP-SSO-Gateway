@@ -1,0 +1,31 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    # The only published port, and only on localhost.
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./protect.conf:/etc/nginx/snippets/protect.conf:ro
+    depends_on: [gateway, echo]
+
+  gateway:
+    build: .
+    environment:
+      # The compose service name of nginx: the only caller /introspect accepts.
+      GATEWAY_INTROSPECT_CALLERS: nginx
+    volumes:
+      - ./policy.yaml:/etc/gateway/policy.yaml:ro
+      # Same file as the upstream mounts: one copy of the secret, nothing to sync.
+      - ./echo_token:/run/secrets/echo_token:ro
+      - gateway-data:/data
+
+  echo:
+    image: python:3.12-slim
+    command: ["python", "/app/mock_mcp.py"]
+    volumes:
+      - ./mock_mcp.py:/app/mock_mcp.py:ro
+      - ./echo_token:/run/secrets/echo_token:ro
+
+volumes:
+  gateway-data:

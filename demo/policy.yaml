@@ -1,0 +1,11 @@
+# Which users may use which server. Read once at start: restart the gateway
+# after editing.
+servers:
+  echo:
+    users: [alice]
+    # The upstream's own secret file, mounted read-only. Leave this out for an
+    # upstream that has no auth of its own.
+    upstream_token_file: /run/secrets/echo_token
+  echo2:
+    users: []
+    upstream_token_file: /run/secrets/echo_token

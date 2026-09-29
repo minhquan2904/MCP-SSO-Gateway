@@ -21,7 +21,8 @@ copies into their client config. MCP SSO Gateway replaces that with:
 
 > **Status: early development.** The code is being extracted from an in-house
 > deployment and generalized. This README describes the target design, and the
-> diagrams below show how it works. Nothing is released yet.
+> diagrams below show how it works. Nothing is released yet, but
+> [`demo/`](demo/) runs the core token exchange with `docker compose up`.
 
 ## How it works
 
