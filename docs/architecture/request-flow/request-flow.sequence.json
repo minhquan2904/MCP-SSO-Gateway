@@ -1,0 +1,226 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Calling an upstream through the gateway",
+    "viewBox": [
+      1080,
+      616
+    ],
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Claude Code",
+      "sublabel": "Bearer personal token"
+    },
+    {
+      "id": "nginx",
+      "type": "frontend",
+      "label": "nginx",
+      "sublabel": "auth_request"
+    },
+    {
+      "id": "gw",
+      "type": "security",
+      "label": "MCP SSO Gateway",
+      "sublabel": "/introspect"
+    },
+    {
+      "id": "policy",
+      "type": "backend",
+      "label": "Policy backend",
+      "sublabel": "cached check"
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "Upstream MCP",
+      "sublabel": "expects static token"
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Internal HTTP API",
+      "sublabel": "no auth of its own"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 340,
+      "label": "MCP server · token exchange"
+    },
+    {
+      "from": 350,
+      "to": 496,
+      "label": "HTTP API · no upstream credential"
+    }
+  ],
+  "messages": [
+    {
+      "id": "c1",
+      "from": "client",
+      "to": "nginx",
+      "y": 170,
+      "label": "POST /<server>/mcp",
+      "variant": "emphasis"
+    },
+    {
+      "id": "a1",
+      "from": "nginx",
+      "to": "gw",
+      "y": 198,
+      "label": "auth_request + X-MCP-Gateway-Server",
+      "variant": "security"
+    },
+    {
+      "id": "p1",
+      "from": "gw",
+      "to": "policy",
+      "y": 226,
+      "label": "can_use? (cache 60s)",
+      "variant": "security"
+    },
+    {
+      "id": "r1",
+      "from": "gw",
+      "to": "nginx",
+      "y": 256,
+      "label": "200 + user + upstream token",
+      "variant": "return"
+    },
+    {
+      "id": "u1",
+      "from": "nginx",
+      "to": "mcp",
+      "y": 286,
+      "label": "Authorization: Bearer <static>",
+      "variant": "emphasis"
+    },
+    {
+      "id": "b1",
+      "from": "mcp",
+      "to": "client",
+      "y": 318,
+      "label": "MCP response / SSE (via nginx)",
+      "variant": "return"
+    },
+    {
+      "id": "c2",
+      "from": "client",
+      "to": "nginx",
+      "y": 370,
+      "label": "POST /<api>/…",
+      "variant": "emphasis"
+    },
+    {
+      "id": "a2",
+      "from": "nginx",
+      "to": "gw",
+      "y": 398,
+      "label": "auth_request + X-MCP-Gateway-Server",
+      "variant": "security"
+    },
+    {
+      "id": "r2",
+      "from": "gw",
+      "to": "nginx",
+      "y": 426,
+      "label": "200 + user, no token",
+      "variant": "return"
+    },
+    {
+      "id": "u2",
+      "from": "nginx",
+      "to": "api",
+      "y": 454,
+      "label": "strip Authorization, forward",
+      "variant": "emphasis"
+    },
+    {
+      "id": "b2",
+      "from": "api",
+      "to": "client",
+      "y": 484,
+      "label": "JSON response (via nginx)",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "nginx",
+      "from": 164,
+      "to": 324,
+      "type": "frontend"
+    },
+    {
+      "participant": "gw",
+      "from": 193,
+      "to": 262,
+      "type": "security"
+    },
+    {
+      "participant": "policy",
+      "from": 221,
+      "to": 240,
+      "type": "backend"
+    },
+    {
+      "participant": "mcp",
+      "from": 281,
+      "to": 324,
+      "type": "backend"
+    },
+    {
+      "participant": "nginx",
+      "from": 364,
+      "to": 490,
+      "type": "frontend"
+    },
+    {
+      "participant": "gw",
+      "from": 393,
+      "to": 432,
+      "type": "security"
+    },
+    {
+      "participant": "api",
+      "from": 449,
+      "to": 490,
+      "type": "backend"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "One token, many servers",
+      "items": [
+        "The token identifies a person; nginx picks the target server, the client cannot",
+        "Each server is authorized separately: user → role → server"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Upstreams never see it",
+      "items": [
+        "MCP server: nginx swaps Authorization for that server's static token",
+        "HTTP API: nginx strips Authorization, forwards only the user header",
+        "401/403 return JSON with a how_to_fix hint"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Fail closed",
+      "items": [
+        "Revoking a grant takes effect within the 60s cache",
+        "Policy backend unreachable → deny; gateway down → fast 5xx",
+        "Open streams survive a revoke; new requests are rejected"
+      ]
+    }
+  ]
+}

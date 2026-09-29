@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Token exchange: personal token → upstream static token",
+    "viewBox": [
+      1080,
+      664
+    ],
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Claude Code",
+      "sublabel": "Bearer personal token"
+    },
+    {
+      "id": "nginx",
+      "type": "frontend",
+      "label": "nginx",
+      "sublabel": "auth_request"
+    },
+    {
+      "id": "gw",
+      "type": "security",
+      "label": "MCP SSO Gateway",
+      "sublabel": "/introspect"
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "Token store",
+      "sublabel": "SQLite, hashes only"
+    },
+    {
+      "id": "policy",
+      "type": "backend",
+      "label": "Policy backend",
+      "sublabel": "cached check"
+    },
+    {
+      "id": "secret",
+      "type": "database",
+      "label": "Upstream secret",
+      "sublabel": "one file, mounted ro"
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "Upstream MCP",
+      "sublabel": "constant-time check"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 204,
+      "label": "At container start"
+    },
+    {
+      "from": 232,
+      "to": 446,
+      "label": "Every authorized request"
+    },
+    {
+      "from": 470,
+      "to": 550,
+      "label": "Rejected"
+    }
+  ],
+  "messages": [
+    {
+      "id": "m1",
+      "from": "secret",
+      "to": "gw",
+      "y": 166,
+      "label": "mount /run/secrets/upstream_token",
+      "variant": "dashed"
+    },
+    {
+      "id": "m2",
+      "from": "secret",
+      "to": "mcp",
+      "y": 190,
+      "label": "mount the same file",
+      "variant": "dashed"
+    },
+    {
+      "id": "call",
+      "from": "client",
+      "to": "nginx",
+      "y": 250,
+      "label": "POST /<server>/mcp",
+      "variant": "emphasis"
+    },
+    {
+      "id": "authz",
+      "from": "nginx",
+      "to": "gw",
+      "y": 274,
+      "label": "auth_request + X-MCP-Gateway-Server",
+      "variant": "security"
+    },
+    {
+      "id": "lookup",
+      "from": "gw",
+      "to": "store",
+      "y": 298,
+      "label": "hash → user, expiry, revoked?",
+      "variant": "security"
+    },
+    {
+      "id": "check",
+      "from": "gw",
+      "to": "policy",
+      "y": 326,
+      "label": "can_use? (cache 60s)",
+      "variant": "security"
+    },
+    {
+      "id": "read",
+      "from": "gw",
+      "to": "secret",
+      "y": 354,
+      "label": "read static token",
+      "variant": "default"
+    },
+    {
+      "id": "ok",
+      "from": "gw",
+      "to": "nginx",
+      "y": 378,
+      "label": "200 + X-MCP-Gateway-Upstream-Token",
+      "variant": "return"
+    },
+    {
+      "id": "swap",
+      "from": "nginx",
+      "to": "mcp",
+      "y": 406,
+      "label": "replace Authorization with static token",
+      "variant": "emphasis"
+    },
+    {
+      "id": "resp",
+      "from": "mcp",
+      "to": "client",
+      "y": 434,
+      "label": "MCP response / SSE (via nginx)",
+      "variant": "return"
+    },
+    {
+      "id": "bad",
+      "from": "client",
+      "to": "nginx",
+      "y": 488,
+      "label": "bad / expired / unauthorized token",
+      "variant": "emphasis"
+    },
+    {
+      "id": "authz2",
+      "from": "nginx",
+      "to": "gw",
+      "y": 512,
+      "label": "auth_request",
+      "variant": "security"
+    },
+    {
+      "id": "deny",
+      "from": "nginx",
+      "to": "client",
+      "y": 538,
+      "label": "401/403 JSON how_to_fix; upstream never sees it",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "nginx",
+      "from": 244,
+      "to": 440,
+      "type": "frontend"
+    },
+    {
+      "participant": "gw",
+      "from": 269,
+      "to": 384,
+      "type": "security"
+    },
+    {
+      "participant": "mcp",
+      "from": 401,
+      "to": 440,
+      "type": "backend"
+    },
+    {
+      "participant": "nginx",
+      "from": 482,
+      "to": 544,
+      "type": "frontend"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Users hold one token",
+      "items": [
+        "Issued at /auth, 90-day expiry",
+        "The static token never leaves the server: nginx adds it on the last hop",
+        "Upstream still checks it: direct calls on the network are rejected"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "One source of truth",
+      "items": [
+        "The upstream's own secret file, mounted read-only in both",
+        "Rotate: rewrite the file in place, restart the upstream",
+        "No copy to keep in sync"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Rejected at the edge",
+      "items": [
+        "401: unknown, expired or revoked; 403: no grant",
+        "Gateway or policy unreachable → fail closed",
+        "Removing a grant takes effect within 60s"
+      ]
+    }
+  ]
+}

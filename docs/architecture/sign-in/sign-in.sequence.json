@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Sign-in and personal token issuance",
+    "viewBox": [
+      1080,
+      480
+    ],
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "participants": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "Developer",
+      "sublabel": "browser"
+    },
+    {
+      "id": "nginx",
+      "type": "frontend",
+      "label": "nginx",
+      "sublabel": "reverse proxy"
+    },
+    {
+      "id": "gw",
+      "type": "security",
+      "label": "MCP SSO Gateway",
+      "sublabel": "/auth, /introspect"
+    },
+    {
+      "id": "idp",
+      "type": "cloud",
+      "label": "Keycloak",
+      "sublabel": "OIDC provider"
+    },
+    {
+      "id": "policy",
+      "type": "backend",
+      "label": "Policy backend",
+      "sublabel": "static · Keycloak · OpenFGA"
+    }
+  ],
+  "messages": [
+    {
+      "id": "open",
+      "from": "user",
+      "to": "nginx",
+      "y": 170,
+      "label": "GET /auth",
+      "variant": "default"
+    },
+    {
+      "id": "proxy",
+      "from": "nginx",
+      "to": "gw",
+      "y": 198,
+      "label": "proxy /auth",
+      "variant": "default"
+    },
+    {
+      "id": "oidc",
+      "from": "gw",
+      "to": "idp",
+      "y": 228,
+      "label": "OIDC code flow + PKCE",
+      "variant": "security"
+    },
+    {
+      "id": "cb",
+      "from": "idp",
+      "to": "gw",
+      "y": 258,
+      "label": "/auth/callback → id_token",
+      "variant": "return"
+    },
+    {
+      "id": "check",
+      "from": "gw",
+      "to": "policy",
+      "y": 288,
+      "label": "which MCP servers may this user use?",
+      "variant": "security"
+    },
+    {
+      "id": "issue",
+      "from": "gw",
+      "to": "user",
+      "y": 322,
+      "label": "personal token (shown once) + client config",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "gw",
+      "from": 193,
+      "to": 328,
+      "type": "security"
+    },
+    {
+      "participant": "idp",
+      "from": 223,
+      "to": 264,
+      "type": "cloud"
+    },
+    {
+      "participant": "policy",
+      "from": 283,
+      "to": 294,
+      "type": "backend"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Sign-in",
+      "items": [
+        "Standard OIDC authorization code flow with PKCE",
+        "Callback query (code, state) is never written to access logs"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Personal token",
+      "items": [
+        "Random, stored only as a SHA-256 hash; 90-day expiry; one per device, revocable",
+        "Issued only if the user may use at least one server"
+      ]
+    }
+  ]
+}
