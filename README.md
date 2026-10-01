@@ -32,6 +32,44 @@ and tears down demo volumes. For a manual OIDC check, start the demo with
 `http://localhost:8080/auth`; sign in as `alice` / `alice-demo-password` and
 issue a PAT at `/auth/token`. See the [demo guide](demo/README.md) for teardown.
 
+## How it works
+
+The gateway sits behind nginx. For each protected request, nginx calls the
+private introspection endpoint, then either rejects the request or forwards it
+to the configured upstream.
+
+### Sign-in and token issuance
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture/sign-in/sign-in-dark.svg">
+  <img alt="Sequence: OIDC sign-in and one-time personal token issuance" src="docs/architecture/sign-in/sign-in-light.svg">
+</picture>
+
+The OIDC callback completes the PKCE flow; the PAT is shown once and only its
+hash is stored. The session cookie is scoped to `/auth`.
+
+### Protected request
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture/request-flow/request-flow-dark.svg">
+  <img alt="Sequence: nginx checks authorization and forwards an MCP or HTTP API request" src="docs/architecture/request-flow/request-flow-light.svg">
+</picture>
+
+nginx selects the server and strips client-supplied gateway headers. An MCP
+route receives its own upstream token; an HTTP API route receives no bearer
+token, only the gateway identity header.
+
+### Token exchange and rejection
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture/token-exchange/token-exchange-dark.svg">
+  <img alt="Sequence: personal token lookup, static YAML grant check, upstream secret, and denial" src="docs/architecture/token-exchange/token-exchange-light.svg">
+</picture>
+
+The policy is static YAML loaded at startup; grant changes require a gateway
+restart. PAT revocation rejects new requests but does not terminate open streams.
+Diagram sources live in [`docs/architecture/`](docs/architecture/).
+
 ## Security boundary
 
 - Mount independent secret files only into services that consume them; never put
