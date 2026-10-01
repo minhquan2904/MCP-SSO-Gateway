@@ -40,7 +40,7 @@
       "id": "policy",
       "type": "backend",
       "label": "Policy backend",
-      "sublabel": "cached check"
+      "sublabel": "static YAML"
     },
     {
       "id": "secret",
@@ -78,7 +78,7 @@
       "from": "secret",
       "to": "gw",
       "y": 166,
-      "label": "mount /run/secrets/upstream_token",
+      "label": "mount /run/secrets/<server>/token",
       "variant": "dashed"
     },
     {
@@ -118,7 +118,7 @@
       "from": "gw",
       "to": "policy",
       "y": 326,
-      "label": "can_use? (cache 60s)",
+      "label": "can_use?",
       "variant": "security"
     },
     {
@@ -229,7 +229,7 @@
       "items": [
         "401: unknown, expired or revoked; 403: no grant",
         "Gateway or policy unreachable → fail closed",
-        "Removing a grant takes effect within 60s"
+        "Grant changes apply after a gateway restart"
       ]
     }
   ]

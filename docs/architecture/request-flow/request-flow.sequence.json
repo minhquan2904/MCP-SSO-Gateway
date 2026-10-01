@@ -34,7 +34,7 @@
       "id": "policy",
       "type": "backend",
       "label": "Policy backend",
-      "sublabel": "cached check"
+      "sublabel": "static YAML"
     },
     {
       "id": "mcp",
@@ -83,7 +83,7 @@
       "from": "gw",
       "to": "policy",
       "y": 226,
-      "label": "can_use? (cache 60s)",
+      "label": "can_use?",
       "variant": "security"
     },
     {
@@ -217,7 +217,7 @@
       "dot": "amber",
       "title": "Fail closed",
       "items": [
-        "Revoking a grant takes effect within the 60s cache",
+        "Grant changes apply after a gateway restart",
         "Policy backend unreachable → deny; gateway down → fast 5xx",
         "Open streams survive a revoke; new requests are rejected"
       ]

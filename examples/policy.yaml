@@ -1,0 +1,22 @@
+# Static authorization policy. Loaded once at boot together with the registry.
+# Grammar:
+#   roles:   <role>: list of server names declared in registry.yaml
+#   members: <role>: list of {issuer, subject} identities
+# A role granted to a server absent from the registry, or a member assigned to
+# a role never declared, aborts startup. Duplicate grants are harmless.
+roles:
+  developer:
+    - echo
+  api-reader:
+    - status-api
+
+# Identities are the exact `iss` and `sub` claims of the validated ID token.
+members:
+  developer:
+    - issuer: https://idp.example.com
+      subject: alice
+    - issuer: https://idp.example.com
+      subject: bob
+  api-reader:
+    - issuer: https://idp.example.com
+      subject: alice

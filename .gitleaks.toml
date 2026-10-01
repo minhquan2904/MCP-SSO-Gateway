@@ -1,0 +1,26 @@
+# Generic public secret detection only. Internal-reference deny patterns are
+# never stored here; they are supplied out-of-band to scripts/release-scan.sh.
+title = "mcp-sso-gateway"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "mcp-gateway-personal-access-token"
+description = "MCP SSO Gateway personal access token"
+regex = '''mcpgw_[A-Za-z0-9_-]{43}_[0-9a-f]{8}'''
+keywords = ["mcpgw_"]
+
+# Public, intentionally non-secret fixture values used by tests and the local
+# demo realm. Matched by exact value so any other secret in these files is
+# still reported.
+[[allowlists]]
+description = "Documented demo and test fixture values"
+regexTarget = "match"
+regexes = [
+  '''alice-demo-password''',
+  '''bob-demo-password''',
+  '''0123456789abcdefghij0123456789abcdefghij''',
+  '''upstream-echo-token-value''',
+  '''mcp-gateway:wrong-secret''',
+]

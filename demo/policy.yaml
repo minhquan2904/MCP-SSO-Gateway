@@ -1,11 +1,7 @@
-# Which users may use which server. Read once at start: restart the gateway
-# after editing.
-servers:
-  echo:
-    users: [alice]
-    # The upstream's own secret file, mounted read-only. Leave this out for an
-    # upstream that has no auth of its own.
-    upstream_token_file: /run/secrets/echo_token
-  echo2:
-    users: []
-    upstream_token_file: /run/secrets/echo_token
+# Loaded once at boot. Restart the gateway after changing grants.
+roles:
+  demo-user: [echo, status]
+members:
+  demo-user:
+    - issuer: http://localhost:8080/idp/realms/mcp-demo
+      subject: 11111111-1111-4111-8111-111111111111

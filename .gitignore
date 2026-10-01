@@ -2,3 +2,19 @@
 demo/echo_token
 __pycache__/
 *.pyc
+private/
+.env
+.env.local
+.env.*.local
+.secrets/
+.venv/
+.coverage
+coverage.*
+dist/
+build/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+# Release-owner generated artifacts scanned by scripts/release-scan.sh.
+.release-scan/

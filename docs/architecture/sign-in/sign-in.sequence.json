@@ -40,7 +40,7 @@
       "id": "policy",
       "type": "backend",
       "label": "Policy backend",
-      "sublabel": "static · Keycloak · OpenFGA"
+      "sublabel": "static YAML"
     }
   ],
   "messages": [

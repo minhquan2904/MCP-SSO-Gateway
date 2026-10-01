@@ -1,0 +1,148 @@
+# Release gates. Every job blocks on failure; nothing here publishes an image,
+# creates a tag, or pushes anything. Third-party actions are pinned to commit
+# SHAs and downloaded tools are pinned to a version plus SHA-256 checksum.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: '0.11.30'
+  GITLEAKS_VERSION: '8.30.1'
+  GITLEAKS_SHA256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
+  TRIVY_VERSION: '0.74.0'
+  TRIVY_SHA256: '2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a'
+  PIP_AUDIT_VERSION: '2.10.1'
+
+jobs:
+  lint-test:
+    name: uv sync --frozen, ruff, socket-disabled pytest
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: uv sync --frozen
+        run: uv sync --frozen
+      - name: ruff
+        run: uv run --frozen ruff check .
+      - name: pytest (network sockets disabled)
+        run: uv run --frozen pytest --disable-socket --allow-unix-socket
+
+  gitleaks:
+    name: Generic secret scan (gitleaks)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install pinned gitleaks
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          sudo install -m 0755 "$RUNNER_TEMP/gitleaks" /usr/local/bin/gitleaks
+      - name: Scan all reachable history
+        run: gitleaks git --config .gitleaks.toml --log-opts=--all --redact --no-banner --exit-code 1 .
+      - name: Scan the checked-out tree
+        run: gitleaks dir --config .gitleaks.toml --redact --no-banner --exit-code 1 .
+
+  dependency-audit:
+    name: Frozen-lock dependency CVE audit (pip-audit)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      # pip-audit fails on any known vulnerability (a superset of Critical/High);
+      # it audits the exact hashed pins from uv.lock, including dev tooling.
+      - name: Export the frozen lock
+        run: uv export --frozen --all-groups --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/requirements.txt"
+      - name: pip-audit
+        run: >-
+          uvx --from "pip-audit==${PIP_AUDIT_VERSION}" pip-audit
+          --requirement "$RUNNER_TEMP/requirements.txt"
+          --require-hashes --disable-pip --strict --progress-spinner off
+
+  image:
+    name: Docker build and Critical/High image scan (Trivy)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build context must exclude private/
+        run: |
+          grep -qx 'private/' .dockerignore
+          grep -qx 'private/' .gitignore
+      - name: Docker build (local only, never pushed)
+        run: docker build --pull --tag mcp-sso-gateway:ci .
+      - name: Install pinned Trivy
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/trivy.tar.gz" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  $RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          sudo install -m 0755 "$RUNNER_TEMP/trivy" /usr/local/bin/trivy
+      - name: Block Critical/High image vulnerabilities
+        run: trivy image --scanners vuln --severity CRITICAL,HIGH --exit-code 1 --no-progress mcp-sso-gateway:ci
+
+  compose-smoke:
+    name: Compose smoke test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Demo stack end to end
+        run: bash scripts/smoke-test.sh
+
+  release-scan:
+    name: Release scan (canary self-test; deny list when provided)
+    runs-on: ubuntu-24.04
+    env:
+      DENY_PATTERNS_SET: ${{ secrets.MCP_GATEWAY_DENY_PATTERNS != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install pinned gitleaks
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          sudo install -m 0755 "$RUNNER_TEMP/gitleaks" /usr/local/bin/gitleaks
+      - name: Canary self-test
+        run: bash scripts/release-scan.sh --self-test
+      # Internal-reference patterns live only in a protected secret. Forks and
+      # pull requests without it still run every generic gate above; the
+      # release owner must run the full scan before any public push.
+      # Jobs have isolated filesystems: the image and scanner installed above
+      # are not available here when a protected deny list is configured.
+      # Jobs have isolated filesystems: the image built in other jobs is not
+      # available here when a protected deny list is configured.
+      - name: Build local release-candidate image
+        if: env.DENY_PATTERNS_SET == 'true'
+        run: docker build --pull --tag mcp-sso-gateway:ci .
+      - name: Full scan with the out-of-band deny list
+        env:
+          DENY_PATTERNS: ${{ secrets.MCP_GATEWAY_DENY_PATTERNS }}
+        run: |
+          if [ -z "$DENY_PATTERNS" ]; then
+            echo '::notice::MCP_GATEWAY_DENY_PATTERNS is not configured; full release scan skipped for this run.'
+            exit 0
+          fi
+          umask 077
+          patterns="$RUNNER_TEMP/deny-patterns"
+          trap 'rm -f "$patterns"' EXIT
+          printf '%s\n' "$DENY_PATTERNS" > "$patterns"
+          MCP_GATEWAY_DENY_PATTERNS_FILE="$patterns" bash scripts/release-scan.sh

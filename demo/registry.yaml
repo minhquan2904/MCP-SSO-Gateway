@@ -1,0 +1,16 @@
+servers:
+  - name: echo
+    client_name: echo
+    title: Echo MCP
+    description: Demo MCP upstream.
+    path: /echo/
+    kind: mcp
+    upstream_token_file: /run/secrets/echo-token/token
+    listed: true
+  - name: status
+    client_name: status
+    title: Status API
+    description: Demo HTTP API upstream.
+    path: /status/
+    kind: http_api
+    listed: true

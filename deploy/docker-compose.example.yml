@@ -1,0 +1,169 @@
+# Production-shaped example deployment of the MCP SSO Gateway.
+#
+# Topology:
+#   - nginx is the only ingress and the only introspection caller. It terminates
+#     TLS on 8443, published on host loopback only; put a host load balancer or
+#     firewall rule in front to expose it publicly.
+#   - gateway is reachable only from nginx over the internal `authz` network and
+#     alone joins `idp-egress` to reach the external HTTPS identity provider
+#     https://idp.example.com. No identity provider runs in this compose project.
+#   - each upstream sits on its own internal network shared only with nginx.
+#
+# Operator-provided host directories (each mounted read-only into exactly the
+# services that need it; files must be readable by uid 1000):
+#   /srv/mcp-gateway/secrets/oidc-client/client-secret     OIDC client secret
+#   /srv/mcp-gateway/secrets/gateway-session/session-secret session signing key
+#   /srv/mcp-gateway/secrets/echo-token/token               echo upstream bearer
+#   /srv/mcp-gateway/tls/tls.crt, tls.key                   gateway.example.com cert
+#
+# The echo and status upstreams run the public demo/mock_mcp.py so the example
+# is complete; replace them with real MCP servers and HTTP APIs.
+name: mcp-sso-gateway
+
+services:
+  nginx:
+    image: nginx:1.27.5-alpine
+    ports: ["127.0.0.1:8443:8443"]
+    read_only: true
+    tmpfs: [/var/cache/nginx, /var/run]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    # The nginx master starts as root and drops to the nginx user for workers.
+    cap_add: [CHOWN, SETGID, SETUID]
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 128
+    depends_on:
+      gateway: {condition: service_healthy}
+      echo: {condition: service_healthy}
+      status: {condition: service_healthy}
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/mcp-gateway.locations.conf:/etc/nginx/snippets/mcp-gateway.locations.conf:ro
+      - ./nginx/mcp-gateway-mcp.conf:/etc/nginx/snippets/mcp-gateway-mcp.conf:ro
+      - ./nginx/mcp-gateway-http-api.conf:/etc/nginx/snippets/mcp-gateway-http-api.conf:ro
+      - nginx-tls:/etc/nginx/tls:ro
+    networks: [edge, authz, echo-net, status-net]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8443"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  gateway:
+    build: ..
+    user: "1000:1000"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    environment:
+      MCP_GATEWAY_OIDC_ISSUER: https://idp.example.com
+      MCP_GATEWAY_OIDC_CLIENT_ID: mcp-gateway
+      MCP_GATEWAY_ALLOW_INSECURE_OIDC: "false"
+      MCP_GATEWAY_PUBLIC_BASE_URL: https://gateway.example.com
+      MCP_GATEWAY_SECRETS_DIR: /run/secrets
+      MCP_GATEWAY_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc-client/client-secret
+      MCP_GATEWAY_SESSION_SECRET_FILE: /run/secrets/gateway-session/session-secret
+      MCP_GATEWAY_REGISTRY_FILE: /etc/mcp-gateway/registry.yaml
+      MCP_GATEWAY_POLICY_FILE: /etc/mcp-gateway/policy.yaml
+      MCP_GATEWAY_DATA_DIR: /data
+      MCP_GATEWAY_INTROSPECT_CALLERS: nginx
+    volumes:
+      - ../examples/registry.yaml:/etc/mcp-gateway/registry.yaml:ro
+      - ../examples/policy.yaml:/etc/mcp-gateway/policy.yaml:ro
+      - gateway-data:/data
+      - oidc-client:/run/secrets/oidc-client:ro
+      - gateway-session:/run/secrets/gateway-session:ro
+      - echo-token:/run/secrets/echo-token:ro
+    networks: [authz, idp-egress]
+    healthcheck:
+      test: ["CMD", "python", "/app/docker/healthcheck.py"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  echo:
+    image: python:3.12.11-slim-bookworm
+    command: ["python", "/app/mock_mcp.py"]
+    user: "1000:1000"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    environment:
+      ECHO_TOKEN_FILE: /run/secrets/echo-token/token
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ../demo/mock_mcp.py:/app/mock_mcp.py:ro
+      - echo-token:/run/secrets/echo-token:ro
+    networks: [echo-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  status:
+    image: python:3.12.11-slim-bookworm
+    command: ["python", "/app/mock_mcp.py"]
+    user: "1000:1000"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    environment:
+      STATUS_MODE: "true"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ../demo/mock_mcp.py:/app/mock_mcp.py:ro
+    networks: [status-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+networks:
+  # Published-port network; only nginx joins it.
+  edge: {}
+  # nginx <-> gateway only: /auth/ proxying and the /_authz introspection subrequest.
+  authz: {internal: true}
+  # Gateway-only egress to the external HTTPS identity provider.
+  idp-egress: {}
+  # One internal network per upstream, shared only with nginx.
+  echo-net: {internal: true}
+  status-net: {internal: true}
+
+volumes:
+  gateway-data: {}
+  # Directory-scoped secret volumes bound to operator-managed host directories.
+  oidc-client:
+    driver: local
+    driver_opts: {type: none, o: bind, device: /srv/mcp-gateway/secrets/oidc-client}
+  gateway-session:
+    driver: local
+    driver_opts: {type: none, o: bind, device: /srv/mcp-gateway/secrets/gateway-session}
+  echo-token:
+    driver: local
+    driver_opts: {type: none, o: bind, device: /srv/mcp-gateway/secrets/echo-token}
+  nginx-tls:
+    driver: local
+    driver_opts: {type: none, o: bind, device: /srv/mcp-gateway/tls}

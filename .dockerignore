@@ -1,0 +1,17 @@
+# Allowlist: the build context contains only what the Dockerfile copies.
+# Everything else, including private/, plans/, docs/, demo/, tests/, local
+# secrets, and VCS metadata, never reaches the Docker daemon.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!NOTICE
+!mcp_gateway/
+!mcp_gateway/**
+!docker/
+!docker/**
+**/__pycache__/
+**/*.pyc
+# Redundant with the allowlist; kept explicit so release gates can assert it.
+private/

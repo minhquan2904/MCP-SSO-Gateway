@@ -1,0 +1,23 @@
+# Registry: the gateway's single source of truth for server metadata.
+# Loaded once at boot. Unknown fields, duplicate names or paths, overlapping
+# path prefixes, and unsafe names abort startup.
+#
+# `kind: mcp` requires an absolute `upstream_token_file` below
+# MCP_GATEWAY_SECRETS_DIR (read at request time, never logged); `kind: http_api`
+# must not have one and never receives an upstream credential from the gateway.
+# Each `path` must equal the nginx `location ^~` prefix that protects it.
+servers:
+  - name: echo
+    client_name: echo
+    title: Echo MCP
+    description: Example MCP server reached through the gateway with its own upstream token.
+    path: /echo/
+    kind: mcp
+    upstream_token_file: /run/secrets/echo-token/token
+    listed: true
+  - name: status-api
+    title: Status API
+    description: Example HTTP API proxied through the gateway without an upstream credential.
+    path: /status/
+    kind: http_api
+    listed: true

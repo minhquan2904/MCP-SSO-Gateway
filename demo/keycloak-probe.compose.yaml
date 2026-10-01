@@ -1,0 +1,85 @@
+name: mcp-sso-gateway-probe
+
+services:
+  init-secrets:
+    profiles: [keycloak-probe]
+    image: busybox:1.37.0
+    entrypoint: ["/bin/sh", "/scripts/init-secrets.sh"]
+    network_mode: none
+    volumes:
+      - ./init-secrets.sh:/scripts/init-secrets.sh:ro
+      - bootstrap-admin:/run/secrets/bootstrap-admin
+      - oidc-client:/run/secrets/oidc-client
+      - gateway-session:/run/secrets/gateway-session
+      - echo-token:/run/secrets/echo-token
+      - status-token:/run/secrets/status-token
+
+  keycloak:
+    profiles: [keycloak-probe]
+    image: quay.io/keycloak/keycloak:26.1.4
+    entrypoint: ["/scripts/keycloak-entrypoint.sh"]
+    environment:
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: /idp
+      KC_HOSTNAME: http://localhost:8080/idp
+      KC_HOSTNAME_ADMIN: http://localhost:8080/idp
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+    depends_on:
+      init-secrets:
+        condition: service_completed_successfully
+    volumes:
+      - ./keycloak/realm.json:/opt/keycloak/data/import/mcp-demo-realm.json:ro
+      - ./keycloak-entrypoint.sh:/scripts/keycloak-entrypoint.sh:ro
+      - keycloak-data:/opt/keycloak/data
+      - bootstrap-admin:/run/secrets/bootstrap-admin:ro
+    networks: [identity-provider]
+    healthcheck:
+      test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/9000; printf \"GET /idp/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; response=$$(cat <&3); [[ $$response == *\"status\"*\"UP\"* ]]'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+  init-keycloak-client:
+    profiles: [keycloak-probe]
+    image: quay.io/keycloak/keycloak:26.1.4
+    entrypoint: ["/scripts/init-keycloak-client.sh"]
+    environment:
+      MCP_GATEWAY_PUBLIC_BASE_URL: http://localhost:8080
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    network_mode: service:keycloak
+    volumes:
+      - ./init-keycloak-client.sh:/scripts/init-keycloak-client.sh:ro
+      - keycloak-data:/opt/keycloak/data
+      - bootstrap-admin:/run/secrets/bootstrap-admin
+      - oidc-client:/run/secrets/oidc-client:ro
+
+  nginx:
+    profiles: [keycloak-probe]
+    image: nginx:1.27.5-alpine
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      init-keycloak-client:
+        condition: service_completed_successfully
+    volumes:
+      - ./keycloak-probe.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [edge, identity-provider]
+
+networks:
+  edge: {}
+  identity-provider:
+    name: mcp-sso-gateway-probe-idp
+    internal: true
+
+volumes:
+  keycloak-data:
+  bootstrap-admin:
+  oidc-client:
+  gateway-session:
+  echo-token:
+  status-token:
